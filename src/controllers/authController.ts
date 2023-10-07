@@ -5,6 +5,7 @@ import * as yup from 'yup';
 import prisma from '../services/prisma';
 import client from '../services/oauth';
 import { LoginRequestData, SignupRequestData } from '../types';
+import { TokenPayload } from 'google-auth-library';
 
 const loginSchema = yup.object().shape({
 	googleId: yup.string().required(),
@@ -12,11 +13,7 @@ const loginSchema = yup.object().shape({
 });
 
 const signupSchema = yup.object().shape({
-	name: yup.string().required(),
-	email: yup.string().email().required(),
-	imageUrl: yup.string().url().required(),
-	googleId: yup.string().required(),
-	googleToken: yup.string().required()
+	googleAccessToken: yup.string().required()
 });
 
 export async function login(
@@ -67,17 +64,22 @@ export async function signup(
 		}
 	}
 
-	const { name, email, imageUrl, googleId, googleToken } = req.body;
+	const { googleAccessToken } = req.body;
 
-	const isValid = await verifyGoogleToken(googleToken, googleId);
+	const userData = await getGoogleToken(googleAccessToken);
 
-	if (!isValid) {
+	if (!userData) {
 		return res.status(301).send({ error: 'invalid token' });
 	}
 
 	try {
 		const user = await prisma.user.create({
-			data: { name, email, imageUrl, googleId },
+			data: {
+				name: userData.name as string,
+				email: userData.email as string,
+				imageUrl: userData.picture as string,
+				googleId: userData.sub
+			},
 			select: { id: true, name: true, email: true, imageUrl: true }
 		});
 
@@ -95,6 +97,20 @@ export async function signup(
 		}
 
 		return res.status(500).send();
+	}
+}
+
+async function getGoogleToken(code: string): Promise<TokenPayload | null> {
+	try {
+		const { tokens } = await client.getToken(code);
+
+		const ticket = await client.verifyIdToken({
+			idToken: tokens.id_token!
+		});
+
+		return ticket.getPayload() as TokenPayload;
+	} catch (error) {
+		return null;
 	}
 }
 

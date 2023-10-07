@@ -1,9 +1,5 @@
 export interface SignupRequestData {
-	name: string;
-	email: string;
-	imageUrl: string;
-	googleId: string;
-	googleToken: string;
+	googleAccessToken: string;
 }
 
 export interface LoginRequestData {

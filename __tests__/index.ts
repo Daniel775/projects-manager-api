@@ -11,9 +11,14 @@ import server from '../src/app';
 import prisma from '../src/services/prisma';
 import oauth from '../src/services/oauth';
 import { LoginRequestData, SignupRequestData } from '../src/types';
+import {
+	GetTokenOptions,
+	GetTokenResponse
+} from 'google-auth-library/build/src/auth/oauth2client';
 
 interface MockOAuth2Client extends OAuth2Client {
 	verifyIdToken: (options: VerifyIdTokenOptions) => Promise<LoginTicket>;
+	getToken: (code: string | GetTokenOptions) => Promise<GetTokenResponse>;
 }
 
 const user = {
@@ -24,8 +29,18 @@ const user = {
 	googleId: '1'
 };
 
+const tokenResponse: GetTokenResponse = {
+	tokens: { id_token: null },
+	res: null
+};
+
 const loginTicket = {
-	getPayload: () => ({ sub: user.googleId })
+	getPayload: () => ({
+		sub: user.googleId,
+		name: user.name,
+		email: user.email,
+		picture: user.imageUrl
+	})
 } as LoginTicket;
 
 jest.mock('../src/services/oauth', () => ({
@@ -55,16 +70,13 @@ describe('POST /signup', () => {
 			updatedAt: new Date()
 		});
 
+		oauthMock.getToken.mockResolvedValue(tokenResponse);
 		oauthMock.verifyIdToken.mockResolvedValue(loginTicket);
 
 		const response = await supertest(server)
 			.post('/signup')
 			.send({
-				email: 'email@email.com',
-				name: 'name',
-				googleId: '1',
-				googleToken: 'token',
-				imageUrl: 'https://image.com'
+				googleAccessToken: 'access_token'
 			} as SignupRequestData);
 
 		expect(response.statusCode).toBe(200);
@@ -79,13 +91,7 @@ describe('POST /signup', () => {
 
 		expect(response.statusCode).toBe(422);
 		expect(response.body).toEqual({
-			error: [
-				'name is a required field',
-				'email is a required field',
-				'imageUrl is a required field',
-				'googleId is a required field',
-				'googleToken is a required field'
-			]
+			error: ['googleAccessToken is a required field']
 		});
 	});
 
@@ -97,16 +103,13 @@ describe('POST /signup', () => {
 			})
 		);
 
+		oauthMock.getToken.mockResolvedValue(tokenResponse);
 		oauthMock.verifyIdToken.mockResolvedValue(loginTicket);
 
 		const response = await supertest(server)
 			.post('/signup')
 			.send({
-				email: 'email@email.com',
-				name: 'name',
-				googleId: '1',
-				googleToken: 'token',
-				imageUrl: 'https://image.com'
+				googleAccessToken: 'access_token'
 			} as SignupRequestData);
 
 		expect(response.statusCode).toBe(409);
@@ -122,16 +125,12 @@ describe('POST /signup', () => {
 			updatedAt: new Date()
 		});
 
-		oauthMock.verifyIdToken.mockRejectedValue(new Error());
+		oauthMock.getToken.mockRejectedValue(new Error());
 
 		const response = await supertest(server)
 			.post('/signup')
 			.send({
-				email: 'email@email.com',
-				name: 'name',
-				googleId: '1',
-				googleToken: 'token',
-				imageUrl: 'https://image.com'
+				googleAccessToken: 'access_token'
 			} as SignupRequestData);
 
 		expect(response.statusCode).toBe(301);
@@ -205,7 +204,7 @@ describe('POST /login', () => {
 			.send({
 				googleToken: 'token',
 				googleId: '1'
-			} as SignupRequestData);
+			} as LoginRequestData);
 
 		expect(response.statusCode).toBe(301);
 		expect(response.body).toEqual({ error: 'invalid token' });
